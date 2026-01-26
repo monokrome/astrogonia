@@ -11,6 +11,58 @@ import { remarkDirectives, type RemarkDirectivesOptions } from './remark-directi
 
 export { remarkDirectives, type RemarkDirectivesOptions }
 
+// Re-export gonia APIs for convenience
+export {
+  // Core types
+  Mode,
+  Expression,
+  Context,
+  Directive,
+  directive,
+  getDirective,
+  getDirectiveNames,
+  clearDirectives,
+  configureDirective,
+  type DirectiveMeta,
+
+  // Context system
+  createContext,
+  createChildContext,
+  createContextKey,
+  registerContext,
+  resolveContext,
+  hasContext,
+  removeContext,
+  clearContexts,
+  type ContextKey,
+
+  // Reactivity
+  reactive,
+  effect,
+  createScope,
+  createEffectScope,
+  type EffectScope,
+
+  // Templates
+  createTemplateRegistry,
+  createMemoryRegistry,
+  createServerRegistry,
+  type TemplateRegistry,
+
+  // Utilities
+  findRoots,
+  parseInterpolation,
+  getInjectables,
+  isContextKey,
+  type Injectable,
+  getRootScope,
+  clearRootScope,
+  findAncestor,
+
+  // Built-in directives
+  directives,
+} from 'gonia'
+
 export interface AstrogoniaOptions {
   /**
    * Initial state for SSR.
