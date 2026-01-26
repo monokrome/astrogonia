@@ -7,6 +7,9 @@
 import type { AstroIntegration } from 'astro'
 import { render, registerDirective, type DirectiveRegistry } from 'gonia/server'
 import { directives } from 'gonia'
+import { remarkDirectives, type RemarkDirectivesOptions } from './remark-directives.js'
+
+export { remarkDirectives, type RemarkDirectivesOptions }
 
 export interface AstrogoniaOptions {
   /**
@@ -14,9 +17,20 @@ export interface AstrogoniaOptions {
    */
   state?: Record<string, unknown>
   /**
-   * Custom directives to register.
+   * Custom directives to register for SSR.
    */
   directives?: Record<string, unknown>
+  /**
+   * Enable frontmatter directive declarations in markdown.
+   * When true, adds a remark plugin that reads `directive` from frontmatter.
+   * @defaultValue true
+   */
+  frontmatterDirectives?: boolean
+  /**
+   * Custom directive source mapping for frontmatter imports.
+   * Maps directive names to their module paths.
+   */
+  directiveSources?: Map<string, string>
 }
 
 function createDefaultRegistry(): DirectiveRegistry {
@@ -79,6 +93,7 @@ function goniaVitePlugin(options: AstrogoniaOptions, registry: DirectiveRegistry
  */
 export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegration {
   const registry = createDefaultRegistry()
+  const enableFrontmatter = options.frontmatterDirectives ?? true
 
   if (options.directives) {
     for (const [name, directive] of Object.entries(options.directives)) {
@@ -90,11 +105,21 @@ export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegr
     name: 'astrogonia',
     hooks: {
       'astro:config:setup': ({ updateConfig }) => {
-        updateConfig({
+        const config: Parameters<typeof updateConfig>[0] = {
           vite: {
             plugins: [goniaVitePlugin(options, registry)]
           }
-        })
+        }
+
+        if (enableFrontmatter) {
+          config.markdown = {
+            remarkPlugins: [
+              [remarkDirectives, { directiveSources: options.directiveSources }]
+            ]
+          }
+        }
+
+        updateConfig(config)
       }
     }
   }

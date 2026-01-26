@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import astrogonia from './index.js'
+import astrogonia, { remarkDirectives } from './index.js'
 
 describe('astrogonia', () => {
   describe('integration', () => {
@@ -30,7 +30,7 @@ describe('astrogonia', () => {
   })
 
   describe('config:setup hook', () => {
-    it('calls updateConfig with vite plugins', () => {
+    it('calls updateConfig with vite plugins and markdown config', () => {
       const integration = astrogonia()
       const updateConfig = vi.fn()
 
@@ -38,13 +38,11 @@ describe('astrogonia', () => {
       hook({ updateConfig })
 
       expect(updateConfig).toHaveBeenCalledTimes(1)
-      expect(updateConfig).toHaveBeenCalledWith({
-        vite: {
-          plugins: expect.arrayContaining([
-            expect.objectContaining({ name: 'astrogonia' })
-          ])
-        }
-      })
+
+      const config = updateConfig.mock.calls[0][0]
+      expect(config.vite.plugins).toHaveLength(1)
+      expect(config.vite.plugins[0].name).toBe('astrogonia')
+      expect(config.markdown.remarkPlugins).toHaveLength(1)
     })
 
     it('vite plugin has enforce: post', () => {
@@ -70,6 +68,29 @@ describe('astrogonia', () => {
       const plugin = config.vite.plugins[0]
       expect(plugin.transformIndexHtml).toBeDefined()
       expect(typeof plugin.transformIndexHtml).toBe('function')
+    })
+
+    it('can disable frontmatter directives', () => {
+      const integration = astrogonia({ frontmatterDirectives: false })
+      const updateConfig = vi.fn()
+
+      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { updateConfig: typeof updateConfig }) => void
+      hook({ updateConfig })
+
+      const config = updateConfig.mock.calls[0][0]
+      expect(config.markdown).toBeUndefined()
+    })
+  })
+
+  describe('remarkDirectives', () => {
+    it('exports remarkDirectives plugin', () => {
+      expect(remarkDirectives).toBeDefined()
+      expect(typeof remarkDirectives).toBe('function')
+    })
+
+    it('returns a transform function', () => {
+      const plugin = remarkDirectives()
+      expect(typeof plugin).toBe('function')
     })
   })
 })

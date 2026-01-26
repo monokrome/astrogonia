@@ -34,9 +34,11 @@
     "gonia": ">=0.1.0"
   },
   "devDependencies": {
+    "@types/mdast": "^4.0.4",
     "astro": "^5.16.14",
     "gonia": "^0.1.1",
     "typescript": "^5.7.0",
+    "vfile": "^6.0.3",
     "vite": "^6.4.0",
     "vitest": "^4.0.17"
   }
