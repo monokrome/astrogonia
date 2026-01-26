@@ -1,6 +1,6 @@
 {
   "name": "astrogonia",
-  "version": "0.0.6",
+  "version": "0.1.0",
   "description": "Astro integration for Gonia SSR-first reactive UI library",
   "type": "module",
   "license": "BSD-2-Clause",
