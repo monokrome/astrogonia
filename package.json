@@ -1,9 +1,9 @@
 {
   "name": "astrogonia",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Astro integration for Gonia SSR-first reactive UI library",
   "type": "module",
-  "license": "MIT",
+  "license": "BSD-2-Clause",
   "keywords": [
     "astro",
     "astro-integration",
@@ -16,7 +16,8 @@
     "url": "https://github.com/monokrome/astrogonia"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "exports": {
     ".": {
