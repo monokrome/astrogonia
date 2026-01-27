@@ -161,7 +161,39 @@ async function processHtmlFile(
     }
   }
 
-  const rendered = await render(html, state, registry)
+  // Check if this is a full HTML document
+  const isFullDocument = /^\s*<!DOCTYPE|^\s*<html/i.test(html)
+
+  let rendered: string
+  if (isFullDocument) {
+    // Extract body content, process it, then reconstruct
+    const bodyMatch = html.match(/<body([^>]*)>([\s\S]*)<\/body>/i)
+    if (bodyMatch) {
+      const bodyAttrs = bodyMatch[1] // includes leading space if attrs exist
+      const bodyContent = bodyMatch[2]
+
+      // Create a wrapper that preserves body attributes for directive processing
+      const fragment = `<div data-gonia-body="1"${bodyAttrs}>${bodyContent}</div>`
+      const renderedFragment = await render(fragment, state, registry)
+
+      // Extract the rendered content from wrapper
+      const wrapperMatch = renderedFragment.match(/<div data-gonia-body="1"([^>]*)>([\s\S]*)<\/div>$/i)
+      if (wrapperMatch) {
+        const renderedAttrs = wrapperMatch[1]
+        const renderedContent = wrapperMatch[2]
+        rendered = html.replace(
+          /<body([^>]*)>([\s\S]*)<\/body>/i,
+          `<body${renderedAttrs}>${renderedContent}</body>`
+        )
+      } else {
+        rendered = html
+      }
+    } else {
+      rendered = html
+    }
+  } else {
+    rendered = await render(html, state, registry)
+  }
 
   if (rendered !== html) {
     await writeFile(filePath, rendered)
