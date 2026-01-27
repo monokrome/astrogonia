@@ -30,55 +30,37 @@ describe('astrogonia', () => {
   })
 
   describe('config:setup hook', () => {
-    it('calls updateConfig with vite plugins and markdown config', () => {
+    it('calls updateConfig with markdown config when frontmatter enabled', async () => {
       const integration = astrogonia()
       const updateConfig = vi.fn()
+      const config = { root: new URL('file:///test/') }
 
-      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { updateConfig: typeof updateConfig }) => void
-      hook({ updateConfig })
+      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { config: typeof config, updateConfig: typeof updateConfig }) => Promise<void>
+      await hook({ config, updateConfig })
 
       expect(updateConfig).toHaveBeenCalledTimes(1)
 
-      const config = updateConfig.mock.calls[0][0]
-      expect(config.vite.plugins).toHaveLength(1)
-      expect(config.vite.plugins[0].name).toBe('astrogonia')
-      expect(config.markdown.remarkPlugins).toHaveLength(1)
+      const updateArgs = updateConfig.mock.calls[0][0]
+      expect(updateArgs.markdown?.remarkPlugins).toHaveLength(1)
     })
 
-    it('vite plugin has enforce: post', () => {
-      const integration = astrogonia()
-      const updateConfig = vi.fn()
-
-      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { updateConfig: typeof updateConfig }) => void
-      hook({ updateConfig })
-
-      const config = updateConfig.mock.calls[0][0]
-      const plugin = config.vite.plugins[0]
-      expect(plugin.enforce).toBe('post')
-    })
-
-    it('vite plugin has transformIndexHtml hook', () => {
-      const integration = astrogonia()
-      const updateConfig = vi.fn()
-
-      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { updateConfig: typeof updateConfig }) => void
-      hook({ updateConfig })
-
-      const config = updateConfig.mock.calls[0][0]
-      const plugin = config.vite.plugins[0]
-      expect(plugin.transformIndexHtml).toBeDefined()
-      expect(typeof plugin.transformIndexHtml).toBe('function')
-    })
-
-    it('can disable frontmatter directives', () => {
+    it('can disable frontmatter directives', async () => {
       const integration = astrogonia({ frontmatterDirectives: false })
       const updateConfig = vi.fn()
+      const config = { root: new URL('file:///test/') }
 
-      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { updateConfig: typeof updateConfig }) => void
-      hook({ updateConfig })
+      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { config: typeof config, updateConfig: typeof updateConfig }) => Promise<void>
+      await hook({ config, updateConfig })
 
-      const config = updateConfig.mock.calls[0][0]
-      expect(config.markdown).toBeUndefined()
+      const updateArgs = updateConfig.mock.calls[0][0]
+      expect(updateArgs.markdown).toBeUndefined()
+    })
+  })
+
+  describe('build:done hook', () => {
+    it('provides astro:build:done hook', () => {
+      const integration = astrogonia()
+      expect(integration.hooks).toHaveProperty('astro:build:done')
     })
   })
 
