@@ -5,8 +5,10 @@
  */
 
 import type { AstroIntegration } from 'astro'
-import { render, registerDirective, type DirectiveRegistry } from 'gonia/server'
-import { directives } from 'gonia'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { render, registerDirective, registerService, type DirectiveRegistry } from 'gonia/server'
+import { directives, createServerRegistry } from 'gonia'
 import { remarkDirectives, type RemarkDirectivesOptions } from './remark-directives.js'
 
 export { remarkDirectives, type RemarkDirectivesOptions }
@@ -63,6 +65,19 @@ export {
   directives,
 } from 'gonia'
 
+export interface VanillaExtractOptions {
+  /**
+   * Entry file for styles (relative to project root).
+   * @defaultValue 'src/styles/index.ts'
+   */
+  entry?: string
+  /**
+   * Pre-imported styles object.
+   * If provided, skips dynamic import and uses these directly.
+   */
+  styles?: Record<string, unknown>
+}
+
 export interface AstrogoniaOptions {
   /**
    * Initial state for SSR.
@@ -83,6 +98,26 @@ export interface AstrogoniaOptions {
    * Maps directive names to their module paths.
    */
   directiveSources?: Map<string, string>
+  /**
+   * Directory containing Gonia templates (relative to project root).
+   * Templates are .html files that can be used with g-template directive.
+   * @defaultValue 'src/templates'
+   */
+  templatesDir?: string
+  /**
+   * Enable Astro's JSX-style templating alongside Gonia.
+   * When false, pages should use g-template for layouts.
+   * @defaultValue false
+   */
+  astroTemplating?: boolean
+  /**
+   * Enable vanilla-extract CSS integration.
+   * When true, uses convention (src/styles/index.ts).
+   * Pass object to customize entry path.
+   * Styles are registered as $styles service for DI.
+   * @defaultValue true
+   */
+  vanillaExtract?: boolean | VanillaExtractOptions
 }
 
 function createDefaultRegistry(): DirectiveRegistry {
@@ -97,6 +132,8 @@ function createDefaultRegistry(): DirectiveRegistry {
     ['html', directives.html],
     ['model', directives.model],
     ['on', directives.on],
+    ['template', directives.template],
+    ['slot', directives.slot],
   ]
 
   for (const [name, directive] of builtins) {
@@ -106,27 +143,38 @@ function createDefaultRegistry(): DirectiveRegistry {
   return registry
 }
 
-function goniaVitePlugin(options: AstrogoniaOptions, registry: DirectiveRegistry) {
-  return {
-    name: 'astrogonia',
-    enforce: 'post' as const,
+async function processHtmlFile(
+  filePath: string,
+  options: AstrogoniaOptions,
+  registry: DirectiveRegistry
+): Promise<void> {
+  const html = await readFile(filePath, 'utf-8')
 
-    async transformIndexHtml(html: string) {
-      const stateMatch = html.match(/<script id="gonia-state" type="application\/json">([\s\S]*?)<\/script>/)
-      let state: Record<string, unknown> = options.state ?? {}
+  const stateMatch = html.match(/<script id="gonia-state" type="application\/json">([\s\S]*?)<\/script>/)
+  let state: Record<string, unknown> = options.state ?? {}
 
-      if (stateMatch) {
-        try {
-          state = { ...state, ...JSON.parse(stateMatch[1]) }
-        } catch {
-          // Invalid JSON, use default state
-        }
-      }
-
-      const rendered = await render(html, state, registry)
-      return rendered
+  if (stateMatch) {
+    try {
+      state = { ...state, ...JSON.parse(stateMatch[1]) }
+    } catch {
+      // Invalid JSON, use default state
     }
   }
+
+  const rendered = await render(html, state, registry)
+
+  if (rendered !== html) {
+    await writeFile(filePath, rendered)
+  }
+}
+
+function setupTemplateRegistry(rootDir: string, templatesDir: string): void {
+  const templatesPath = join(rootDir, templatesDir)
+  const registry = createServerRegistry(
+    (path) => readFile(path, 'utf-8'),
+    templatesPath + '/'
+  )
+  registerService('$templates', registry)
 }
 
 /**
@@ -146,6 +194,9 @@ function goniaVitePlugin(options: AstrogoniaOptions, registry: DirectiveRegistry
 export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegration {
   const registry = createDefaultRegistry()
   const enableFrontmatter = options.frontmatterDirectives ?? true
+  const templatesDir = options.templatesDir ?? 'src/templates'
+  const vanillaExtract = options.vanillaExtract ?? true
+  let rootDir = ''
 
   if (options.directives) {
     for (const [name, directive] of Object.entries(options.directives)) {
@@ -153,25 +204,74 @@ export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegr
     }
   }
 
+  // Parse vanilla-extract options
+  const veEnabled = vanillaExtract !== false
+  const veOptions = typeof vanillaExtract === 'object' ? vanillaExtract : {}
+  const veEntry = veOptions.entry ?? 'src/styles/index.ts'
+  const veStyles = veOptions.styles
+
   return {
     name: 'astrogonia',
     hooks: {
-      'astro:config:setup': ({ updateConfig }) => {
-        const config: Parameters<typeof updateConfig>[0] = {
-          vite: {
-            plugins: [goniaVitePlugin(options, registry)]
+      'astro:config:setup': async ({ config, updateConfig }) => {
+        rootDir = config.root.pathname
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vitePlugins: any[] = []
+
+        // Add vanilla-extract vite plugin if enabled
+        if (veEnabled) {
+          try {
+            const ve = await import('@vanilla-extract/vite-plugin' as string) as { vanillaExtractPlugin: () => unknown }
+            vitePlugins.push(ve.vanillaExtractPlugin())
+          } catch {
+            // vanilla-extract not installed, skip
           }
         }
 
+        // Add gonia vite plugin
+        try {
+          const goniaVite = await import('gonia/vite' as string) as { gonia: () => unknown }
+          vitePlugins.push(goniaVite.gonia())
+        } catch {
+          // gonia/vite not available, skip
+        }
+
+        const updates: Parameters<typeof updateConfig>[0] = {}
+
+        if (vitePlugins.length > 0) {
+          updates.vite = { plugins: vitePlugins }
+        }
+
         if (enableFrontmatter) {
-          config.markdown = {
+          updates.markdown = {
             remarkPlugins: [
               [remarkDirectives, { directiveSources: options.directiveSources }]
             ]
           }
         }
 
-        updateConfig(config)
+        updateConfig(updates)
+      },
+
+      'astro:build:done': async ({ dir, pages }) => {
+        // Set up template registry for g-template directive
+        setupTemplateRegistry(rootDir, templatesDir)
+
+        // Note: vanilla-extract styles are passed via g-state from pages,
+        // not imported here (vanilla-extract requires vite plugin context)
+
+        // Process all HTML files after they've been written to disk
+        // pages[].pathname is like '' (root) or 'hello-world/' (trailing slash)
+        const htmlFiles = pages.map(p => {
+          const pathname = p.pathname || ''
+          const path = pathname === '' ? 'index.html' : `${pathname}index.html`
+          return new URL(path, dir)
+        })
+
+        await Promise.all(
+          htmlFiles.map(url => processHtmlFile(url.pathname, options, registry))
+        )
       }
     }
   }
