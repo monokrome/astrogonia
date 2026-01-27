@@ -146,7 +146,8 @@ function createDefaultRegistry(): DirectiveRegistry {
 async function processHtmlFile(
   filePath: string,
   options: AstrogoniaOptions,
-  registry: DirectiveRegistry
+  registry: DirectiveRegistry,
+  rootDir: string
 ): Promise<void> {
   const html = await readFile(filePath, 'utf-8')
 
@@ -194,9 +195,25 @@ async function processHtmlFile(
         }
       }
 
-      // Process only the body content, not the attributes
+      // Handle g-template on body by loading and applying template
+      const templateMatch = bodyAttrs.match(/g-template="([^"]*)"|g-template='([^']*)'/)
+      const templateName = templateMatch?.[1] ?? templateMatch?.[2]
+
+      let contentToProcess = bodyContent
+      if (templateName) {
+        try {
+          const templatePath = join(rootDir, options.templatesDir ?? 'src/templates', `${templateName}.html`)
+          const templateHtml = await readFile(templatePath, 'utf-8')
+          // Replace <slot></slot> with body content
+          contentToProcess = templateHtml.replace(/<slot><\/slot>|<slot\s*\/>/, bodyContent)
+        } catch {
+          // Template not found, use body content as-is
+        }
+      }
+
+      // Process the content (with template applied)
       // This avoids HTML entity encoding issues with g-scope values
-      const renderedContent = await render(bodyContent, state, registry)
+      const renderedContent = await render(contentToProcess, state, registry)
 
       rendered = html.replace(
         /<body([^>]*)>([\s\S]*)<\/body>/i,
@@ -316,7 +333,7 @@ export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegr
         })
 
         await Promise.all(
-          htmlFiles.map(url => processHtmlFile(url.pathname, options, registry))
+          htmlFiles.map(url => processHtmlFile(url.pathname, options, registry, rootDir))
         )
       }
     }
