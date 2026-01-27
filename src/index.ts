@@ -172,22 +172,36 @@ async function processHtmlFile(
       const bodyAttrs = bodyMatch[1] // includes leading space if attrs exist
       const bodyContent = bodyMatch[2]
 
-      // Create a wrapper that preserves body attributes for directive processing
-      const fragment = `<div data-gonia-body="1"${bodyAttrs}>${bodyContent}</div>`
-      const renderedFragment = await render(fragment, state, registry)
-
-      // Extract the rendered content from wrapper
-      const wrapperMatch = renderedFragment.match(/<div data-gonia-body="1"([^>]*)>([\s\S]*)<\/div>$/i)
-      if (wrapperMatch) {
-        const renderedAttrs = wrapperMatch[1]
-        const renderedContent = wrapperMatch[2]
-        rendered = html.replace(
-          /<body([^>]*)>([\s\S]*)<\/body>/i,
-          `<body${renderedAttrs}>${renderedContent}</body>`
-        )
-      } else {
-        rendered = html
+      // Extract g-scope from body attributes and merge into state
+      // Decode HTML entities to get the actual JSON
+      // Match double-quoted or single-quoted attribute values properly
+      const scopeMatch = bodyAttrs.match(/g-scope="([^"]*)"|g-scope='([^']*)'/)
+      const scopeValue = scopeMatch?.[1] ?? scopeMatch?.[2]
+      if (scopeValue) {
+        try {
+          const scopeJson = scopeValue
+            .replace(/&quot;/g, '"')
+            .replace(/&#34;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&apos;/g, "'")
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&')
+          const scopeData = JSON.parse(scopeJson)
+          state = { ...state, ...scopeData }
+        } catch {
+          // Invalid JSON in g-scope, continue with existing state
+        }
       }
+
+      // Process only the body content, not the attributes
+      // This avoids HTML entity encoding issues with g-scope values
+      const renderedContent = await render(bodyContent, state, registry)
+
+      rendered = html.replace(
+        /<body([^>]*)>([\s\S]*)<\/body>/i,
+        `<body${bodyAttrs}>${renderedContent}</body>`
+      )
     } else {
       rendered = html
     }
