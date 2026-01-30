@@ -9,6 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { render, registerDirective, registerService, type DirectiveRegistry } from 'gonia/server'
 import { directives, createServerRegistry } from 'gonia'
+import { bellagonia } from 'bellagonia'
 import { remarkDirectives, type RemarkDirectivesOptions } from './remark-directives.js'
 
 export { remarkDirectives, type RemarkDirectivesOptions }
@@ -65,19 +66,6 @@ export {
   directives,
 } from 'gonia'
 
-export interface VanillaExtractOptions {
-  /**
-   * Entry file for styles (relative to project root).
-   * @defaultValue 'src/styles/index.ts'
-   */
-  entry?: string
-  /**
-   * Pre-imported styles object.
-   * If provided, skips dynamic import and uses these directly.
-   */
-  styles?: Record<string, unknown>
-}
-
 export interface AstrogoniaOptions {
   /**
    * Initial state for SSR.
@@ -110,14 +98,6 @@ export interface AstrogoniaOptions {
    * @defaultValue false
    */
   astroTemplating?: boolean
-  /**
-   * Enable vanilla-extract CSS integration.
-   * When true, uses convention (src/styles/index.ts).
-   * Pass object to customize entry path.
-   * Styles are registered as $styles service for DI.
-   * @defaultValue true
-   */
-  vanillaExtract?: boolean | VanillaExtractOptions
 }
 
 function createDefaultRegistry(): DirectiveRegistry {
@@ -143,14 +123,12 @@ function createDefaultRegistry(): DirectiveRegistry {
   return registry
 }
 
-async function processHtmlFile(
-  filePath: string,
+async function processHtmlString(
+  html: string,
   options: AstrogoniaOptions,
   registry: DirectiveRegistry,
   rootDir: string
-): Promise<void> {
-  const html = await readFile(filePath, 'utf-8')
-
+): Promise<string> {
   const stateMatch = html.match(/<script id="gonia-state" type="application\/json">([\s\S]*?)<\/script>/)
   let state: Record<string, unknown> = options.state ?? {}
 
@@ -165,7 +143,6 @@ async function processHtmlFile(
   // Check if this is a full HTML document
   const isFullDocument = /^\s*<!DOCTYPE|^\s*<html/i.test(html)
 
-  let rendered: string
   if (isFullDocument) {
     // Extract body content, process it, then reconstruct
     const bodyMatch = html.match(/<body([^>]*)>([\s\S]*)<\/body>/i)
@@ -215,16 +192,25 @@ async function processHtmlFile(
       // This avoids HTML entity encoding issues with g-scope values
       const renderedContent = await render(contentToProcess, state, registry)
 
-      rendered = html.replace(
+      return html.replace(
         /<body([^>]*)>([\s\S]*)<\/body>/i,
         `<body${bodyAttrs}>${renderedContent}</body>`
       )
-    } else {
-      rendered = html
     }
-  } else {
-    rendered = await render(html, state, registry)
+    return html
   }
+
+  return render(html, state, registry)
+}
+
+async function processHtmlFile(
+  filePath: string,
+  options: AstrogoniaOptions,
+  registry: DirectiveRegistry,
+  rootDir: string
+): Promise<void> {
+  const html = await readFile(filePath, 'utf-8')
+  const rendered = await processHtmlString(html, options, registry, rootDir)
 
   if (rendered !== html) {
     await writeFile(filePath, rendered)
@@ -258,7 +244,6 @@ export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegr
   const registry = createDefaultRegistry()
   const enableFrontmatter = options.frontmatterDirectives ?? true
   const templatesDir = options.templatesDir ?? 'src/templates'
-  const vanillaExtract = options.vanillaExtract ?? true
   let rootDir = ''
 
   if (options.directives) {
@@ -267,38 +252,46 @@ export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegr
     }
   }
 
-  // Parse vanilla-extract options
-  const veEnabled = vanillaExtract !== false
-  const veOptions = typeof vanillaExtract === 'object' ? vanillaExtract : {}
-  const veEntry = veOptions.entry ?? 'src/styles/index.ts'
-  const veStyles = veOptions.styles
-
   return {
     name: 'astrogonia',
     hooks: {
-      'astro:config:setup': async ({ config, updateConfig }) => {
+      'astro:config:setup': async ({ config, updateConfig, addMiddleware, command }) => {
         rootDir = config.root.pathname
+
+        // Add SSR middleware for dev mode only
+        if (command === 'dev') {
+          addMiddleware({
+            entrypoint: 'astrogonia/middleware',
+            order: 'post'
+          })
+        }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const vitePlugins: any[] = []
 
-        // Add vanilla-extract vite plugin if enabled
-        if (veEnabled) {
-          try {
-            const ve = await import('@vanilla-extract/vite-plugin' as string) as { vanillaExtractPlugin: () => unknown }
-            vitePlugins.push(ve.vanillaExtractPlugin())
-          } catch {
-            // vanilla-extract not installed, skip
-          }
+        // Add vanilla-extract vite plugin for .css.ts compilation
+        try {
+          const ve = await import('@vanilla-extract/vite-plugin' as string) as { vanillaExtractPlugin: () => unknown }
+          vitePlugins.push(ve.vanillaExtractPlugin())
+        } catch {
+          // vanilla-extract not installed, skip
         }
 
         // Add gonia vite plugin
         try {
-          const goniaVite = await import('gonia/vite' as string) as { gonia: () => unknown }
-          vitePlugins.push(goniaVite.gonia())
+          const goniaVite = await import('gonia/vite' as string) as { gonia: (opts?: { directiveSources?: string[] }) => unknown }
+          vitePlugins.push(goniaVite.gonia({
+            directiveSources: ['src/directives/**/*.ts']
+          }))
         } catch {
           // gonia/vite not available, skip
         }
+
+        // bellagonia: auto-inject $styles from sibling .css.ts files
+        vitePlugins.push(bellagonia({
+          directiveSources: ['src/directives/**/*.ts']
+        }))
+
 
         const updates: Parameters<typeof updateConfig>[0] = {}
 

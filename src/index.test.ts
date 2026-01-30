@@ -33,10 +33,12 @@ describe('astrogonia', () => {
     it('calls updateConfig with markdown config when frontmatter enabled', async () => {
       const integration = astrogonia()
       const updateConfig = vi.fn()
+      const addMiddleware = vi.fn()
       const config = { root: new URL('file:///test/') }
+      const command = 'build'
 
-      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { config: typeof config, updateConfig: typeof updateConfig }) => Promise<void>
-      await hook({ config, updateConfig })
+      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { config: typeof config, updateConfig: typeof updateConfig, addMiddleware: typeof addMiddleware, command: string }) => Promise<void>
+      await hook({ config, updateConfig, addMiddleware, command })
 
       expect(updateConfig).toHaveBeenCalledTimes(1)
 
@@ -47,10 +49,12 @@ describe('astrogonia', () => {
     it('can disable frontmatter directives', async () => {
       const integration = astrogonia({ frontmatterDirectives: false })
       const updateConfig = vi.fn()
+      const addMiddleware = vi.fn()
       const config = { root: new URL('file:///test/') }
+      const command = 'build'
 
-      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { config: typeof config, updateConfig: typeof updateConfig }) => Promise<void>
-      await hook({ config, updateConfig })
+      const hook = integration.hooks['astro:config:setup'] as unknown as (options: { config: typeof config, updateConfig: typeof updateConfig, addMiddleware: typeof addMiddleware, command: string }) => Promise<void>
+      await hook({ config, updateConfig, addMiddleware, command })
 
       const updateArgs = updateConfig.mock.calls[0][0]
       expect(updateArgs.markdown).toBeUndefined()

@@ -23,12 +23,19 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "import": "./dist/middleware.js"
     }
   },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "bellagonia": "^0.3.0"
   },
   "peerDependencies": {
     "astro": ">=4.0.0",
