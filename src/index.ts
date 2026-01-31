@@ -296,7 +296,14 @@ export default function astrogonia(options: AstrogoniaOptions = {}): AstroIntegr
         const updates: Parameters<typeof updateConfig>[0] = {}
 
         if (vitePlugins.length > 0) {
-          updates.vite = { plugins: vitePlugins }
+          updates.vite = {
+            plugins: vitePlugins,
+            build: {
+              rollupOptions: {
+                external: ['bufferutil', 'utf-8-validate']
+              }
+            }
+          }
         }
 
         if (enableFrontmatter) {
